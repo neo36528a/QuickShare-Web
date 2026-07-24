@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: quickshare-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: quickshare
+      POSTGRES_PASSWORD: quickshare_secret
+      POSTGRES_DB: quickshare_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quickshare -d quickshare_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quickshare-backend
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: 5000
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: quickshare
+      DB_PASSWORD: quickshare_secret
+      DB_NAME: quickshare_db
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN}
+      GOOGLE_DRIVE_FOLDER_NAME: ${GOOGLE_DRIVE_FOLDER_NAME:-QuickShare Uploads}
+      FILE_EXPIRATION_MINUTES: 30
+      MAX_UPLOAD_SIZE_BYTES: 5368709120
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-quickshare_admin_secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: quickshare-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      BACKEND_INTERNAL_URL: http://backend:5000/api
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    container_name: quickshare-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  postgres_data:
